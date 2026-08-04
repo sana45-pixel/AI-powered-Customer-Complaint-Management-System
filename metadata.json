@@ -1,0 +1,6 @@
+{
+  "name": "AI-powered Customer Complaint Management System",
+  "description": "AI-powered Quality Management System for pharmaceutical manufacturing customer complaint intake, automated document extraction, risk assessment copilot, duplicate detection, and CAPA remediation workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
