@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../store/store';
-import { toggleCapaSignoff, generateCapaRecommendation, setActiveTab } from '../store/complaintSlice';
+import { toggleCapaSignoff, generateCapaRecommendation, setActiveTab, addAuditLog } from '../store/complaintSlice';
 import {
   CheckSquare,
   Sparkles,
@@ -15,14 +15,21 @@ import {
   FileQuestion,
   ArrowLeft,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Download,
+  Printer,
+  FileText
 } from 'lucide-react';
+import { downloadComplaintCapaPdf, printComplaintCapaPdf } from '../utils/pdfExport';
 
 export const CapaRemediationView: React.FC = () => {
   const dispatch = useAppDispatch();
   const capa = useAppSelector((state) => state.complaint.capaDraft);
   const formData = useAppSelector((state) => state.complaint.formData);
+  const riskAssessment = useAppSelector((state) => state.complaint.riskAssessment);
+  const sourceFileName = useAppSelector((state) => state.complaint.sourceFileName);
   const isCapaGenerating = useAppSelector((state) => state.complaint.isCapaGenerating);
+  const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
 
   const hasComplaintData = Boolean(
     formData.productName?.trim() ||
@@ -37,6 +44,43 @@ export const CapaRemediationView: React.FC = () => {
 
   const handleSignoff = () => {
     dispatch(toggleCapaSignoff());
+  };
+
+  const handleDownloadPdf = () => {
+    const complaintNum = capa?.complaintId || (formData.batchLotNumber ? `QMS-2026-${formData.batchLotNumber}` : 'QMS-2026-REPORT');
+    const filename = downloadComplaintCapaPdf({
+      complaintNumber: complaintNum,
+      formData,
+      capa,
+      riskAssessment,
+      sourceDocName: sourceFileName || 'Digital_Intake.pdf'
+    });
+
+    dispatch(addAuditLog({
+      action: 'Full CAPA & Incident Report PDF Downloaded',
+      category: 'REPORT',
+      user: 'QA Compliance Auditor (ID: QA-8821)',
+      role: 'Quality Assurance Auditor',
+      details: `Generated and downloaded printable 21 CFR Part 11 compliant PDF dossier (${filename}).`,
+      status: 'SUCCESS',
+      cfrReference: '21 CFR 211.198 / 21 CFR Part 11'
+    }));
+
+    setDownloadSuccessToast(`Successfully generated and downloaded ${filename}`);
+    setTimeout(() => {
+      setDownloadSuccessToast(null);
+    }, 4000);
+  };
+
+  const handlePrintPdf = () => {
+    const complaintNum = capa?.complaintId || 'QMS-2026-REPORT';
+    printComplaintCapaPdf({
+      complaintNumber: complaintNum,
+      formData,
+      capa,
+      riskAssessment,
+      sourceDocName: sourceFileName || 'Digital_Intake.pdf'
+    });
   };
 
   if (!hasComplaintData) {
@@ -94,6 +138,17 @@ export const CapaRemediationView: React.FC = () => {
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-6">
+      {/* Toast banner */}
+      {downloadSuccessToast && (
+        <div id="pdf-download-toast" className="bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl p-3.5 flex items-center justify-between shadow-xs animate-fadeIn">
+          <div className="flex items-center space-x-2 text-xs font-semibold">
+            <FileCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>{downloadSuccessToast}</span>
+          </div>
+          <span className="text-[10px] text-emerald-700 font-mono">21 CFR Part 11 Verified</span>
+        </div>
+      )}
+
       {/* Top Banner */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
         <div>
@@ -110,17 +165,38 @@ export const CapaRemediationView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Download Full CAPA & Incident Report PDF Button */}
+          <button
+            id="download-capa-pdf-btn"
+            onClick={handleDownloadPdf}
+            className="px-3.5 py-1.5 border border-slate-300 hover:border-slate-400 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 shadow-2xs"
+            title="Download Full 21 CFR Part 11 CAPA & Incident Dossier PDF"
+          >
+            <Download className="w-3.5 h-3.5 text-blue-400" />
+            <span>Download Full CAPA & Incident Report PDF</span>
+          </button>
+
+          <button
+            id="print-capa-pdf-btn"
+            onClick={handlePrintPdf}
+            className="px-3 py-1.5 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 transition-all flex items-center space-x-1.5 shadow-2xs"
+            title="Print CAPA Report"
+          >
+            <Printer className="w-3.5 h-3.5 text-slate-500" />
+            <span>Print</span>
+          </button>
+
           <button
             id="regenerate-plan-btn"
             onClick={handleGenerate}
             disabled={isCapaGenerating}
-            className="px-3.5 py-1.5 border border-slate-200 hover:border-blue-300 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-700 bg-white hover:bg-blue-50/50 disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center space-x-1.5 shadow-2xs"
+            className="px-3 py-1.5 border border-slate-200 hover:border-blue-300 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-700 bg-white hover:bg-blue-50/50 disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center space-x-1.5 shadow-2xs"
           >
             {isCapaGenerating ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin" />
-                <span className="text-blue-700 font-medium">Regenerating Plan...</span>
+                <span className="text-blue-700 font-medium">Regenerating...</span>
               </>
             ) : (
               <>

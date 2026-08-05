@@ -1,6 +1,6 @@
 {
   "name": "AI-powered Customer Complaint Management System",
-  "description": "AI-powered Quality Management System for pharmaceutical manufacturing customer complaint intake, automated document extraction, risk assessment copilot, duplicate detection, and CAPA remediation workflows.",
+  "description": "AIVOA Complaints Module - Autonomous Pharma QMS Complaint Intake and Processing System with AI Copilot, Read-Only Synchronized Form, and Automated Risk Assessment.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

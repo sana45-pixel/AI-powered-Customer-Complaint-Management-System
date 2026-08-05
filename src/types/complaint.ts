@@ -49,6 +49,7 @@ export interface RiskAssessmentData {
   reportingDeadline?: string;
   rationale: string;
   recommendedActions: string[];
+  suggestedNextAction?: string; // e.g. "Route to QA investigation and issue replacement"
 }
 
 export interface DuplicateMatch {
@@ -106,11 +107,27 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   agentNode?: string;
+  toolInvoked?: 'Log Complaint Tool' | 'Edit Complaint Tool' | 'Document Extraction Tool';
+  extractedFields?: Record<string, string>;
+  updatedFields?: Record<string, string>;
+  documentName?: string;
   suggestedAction?: {
     type: 'apply_extraction' | 'run_risk' | 'check_duplicates' | 'generate_capa';
     payload?: any;
     label: string;
   };
+}
+
+export interface AuditTrailEntry {
+  id: string;
+  timestamp: string;
+  action: string;
+  category: 'INGESTION' | 'EXTRACTION' | 'RISK_ASSESSMENT' | 'CAPA' | 'DATABASE' | 'COMPLIANCE' | 'EXPORT' | 'REPORT';
+  user: string;
+  role: string;
+  details: string;
+  status: 'SUCCESS' | 'WARNING' | 'CRITICAL' | 'INFO' | 'FAILURE';
+  cfrReference?: string; // e.g. "21 CFR 211.198(a)", "21 CFR Part 11.10", "ICH Q9"
 }
 
 export interface ComplaintRecord extends ComplaintFormData {

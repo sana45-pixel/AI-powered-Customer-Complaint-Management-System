@@ -8,7 +8,8 @@ import {
   ComplaintRecord,
   ComplaintSeverity,
   ComplaintPriority,
-  ComplaintStatus
+  ComplaintStatus,
+  AuditTrailEntry
 } from '../types/complaint';
 import { SAMPLE_COMPLAINTS } from '../data/sampleComplaints';
 
@@ -30,6 +31,10 @@ const INITIAL_FORM: ComplaintFormData = {
   status: 'Pending Triage',
 };
 
+const INITIAL_SEEDED_COMPLAINTS: ComplaintRecord[] = [];
+
+const INITIAL_AUDIT_TRAIL: AuditTrailEntry[] = [];
+
 interface ComplaintState {
   formData: ComplaintFormData;
   historyPast: ComplaintFormData[];
@@ -48,6 +53,7 @@ interface ComplaintState {
   capaDraft: CapaRemediation | null;
   isCapaGenerating: boolean;
   complaintsList: ComplaintRecord[];
+  auditTrail: AuditTrailEntry[];
   activeTab: 'intake' | 'architecture' | 'database' | 'capa';
 }
 
@@ -69,7 +75,15 @@ const initialState: ComplaintState = {
   capaDraft: null,
   isCapaGenerating: false,
   complaintsList: [],
+  auditTrail: [],
   activeTab: 'intake',
+};
+
+// Helper for formatting timestamp
+const getTimestampStr = () => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
 // Async thunk executing document extraction via AI / Backend
@@ -501,6 +515,16 @@ export const complaintSlice = createSlice({
       state.formData = action.payload;
       state.historyFuture = [];
     },
+    setRiskAssessment: (state, action: PayloadAction<RiskAssessmentData | null>) => {
+      state.riskAssessment = action.payload;
+      if (action.payload?.riskCategory === 'Critical / High Risk') {
+        state.formData.initialSeverity = 'Critical';
+        state.formData.priority = 'High';
+      } else if (action.payload?.riskCategory === 'Major Risk' && state.formData.initialSeverity === 'Unassigned') {
+        state.formData.initialSeverity = 'Major';
+        state.formData.priority = 'High';
+      }
+    },
     undoFormChange: (state) => {
       if (state.historyPast.length > 0) {
         const previousState = state.historyPast.pop()!;
@@ -533,6 +557,26 @@ export const complaintSlice = createSlice({
       state.duplicates = [];
       state.capaDraft = null;
     },
+    clearAllData: (state) => {
+      state.formData = { ...INITIAL_FORM };
+      state.historyPast = [];
+      state.historyFuture = [];
+      state.rawInputText = '';
+      state.sourceFileName = '';
+      state.extractionProgress = 0;
+      state.extractionStepText = '';
+      state.isExtracting = false;
+      state.completenessIssues = [];
+      state.isCompletenessChecked = false;
+      state.riskAssessment = null;
+      state.isRiskAssessing = false;
+      state.duplicates = [];
+      state.isDuplicateChecking = false;
+      state.capaDraft = null;
+      state.isCapaGenerating = false;
+      state.complaintsList = [];
+      state.auditTrail = [];
+    },
     setRawInputText: (state, action: PayloadAction<string>) => {
       state.rawInputText = action.payload;
     },
@@ -544,11 +588,20 @@ export const complaintSlice = createSlice({
     setActiveTab: (state, action: PayloadAction<ComplaintState['activeTab']>) => {
       state.activeTab = action.payload;
     },
+    addAuditLog: (state, action: PayloadAction<Omit<AuditTrailEntry, 'id' | 'timestamp'>>) => {
+      const entry: AuditTrailEntry = {
+        id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+        timestamp: getTimestampStr(),
+        ...action.payload
+      };
+      state.auditTrail.unshift(entry);
+    },
     saveComplaintRecord: (state) => {
+      const complaintNumber = 'QMS-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000);
       const newRecord: ComplaintRecord = {
         ...state.formData,
         id: 'REC-' + Date.now(),
-        complaintNumber: 'QMS-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000),
+        complaintNumber,
         createdAt: new Date().toISOString(),
         riskAssessment: state.riskAssessment || undefined,
         duplicates: state.duplicates.length > 0 ? state.duplicates : undefined,
@@ -558,11 +611,36 @@ export const complaintSlice = createSlice({
       };
       state.complaintsList.unshift(newRecord);
       state.formData.status = 'Under Investigation';
+
+      // Record 21 CFR Part 11 Audit Trail Entry
+      state.auditTrail.unshift({
+        id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+        timestamp: getTimestampStr(),
+        action: 'Complaint Saved to Database',
+        category: 'DATABASE',
+        user: 'QA Intake Specialist (ID: QA-8821)',
+        role: 'Quality Assurance Specialist',
+        details: `Logged complaint ${complaintNumber} for Product: ${state.formData.productName || 'Unspecified'} (Batch: ${state.formData.batchLotNumber || 'N/A'}) into validated repository.`,
+        status: 'SUCCESS',
+        cfrReference: '21 CFR 211.198(a)'
+      });
     },
     toggleCapaSignoff: (state) => {
       if (state.capaDraft) {
         state.capaDraft.signedOff = !state.capaDraft.signedOff;
         state.capaDraft.qaApprover = state.capaDraft.signedOff ? 'QA Director (Digitally Signed - 21 CFR Part 11)' : undefined;
+
+        state.auditTrail.unshift({
+          id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+          timestamp: getTimestampStr(),
+          action: state.capaDraft.signedOff ? 'CAPA Electronic Sign-off Approved' : 'CAPA Sign-off Revoked',
+          category: 'CAPA',
+          user: 'QA Director (ID: QA-8821)',
+          role: 'Quality Director',
+          details: `21 CFR Part 11 digital signature ${state.capaDraft.signedOff ? 'affixed' : 'revoked'} for CAPA ${state.capaDraft.id}.`,
+          status: state.capaDraft.signedOff ? 'SUCCESS' : 'WARNING',
+          cfrReference: '21 CFR Part 11.50(a)'
+        });
       }
     }
   },
@@ -580,15 +658,50 @@ export const complaintSlice = createSlice({
         state.historyFuture = [];
         state.rawInputText = action.payload.text;
         state.sourceFileName = action.payload.fileName;
+
+        state.auditTrail.unshift({
+          id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+          timestamp: getTimestampStr(),
+          action: 'AI Field Extraction Executed',
+          category: 'EXTRACTION',
+          user: 'AI Extraction Engine / OCR',
+          role: 'Automated Processing Engine',
+          details: `Ingested document "${action.payload.fileName}" and parsed product, batch, customer, and defect fields.`,
+          status: 'SUCCESS',
+          cfrReference: '21 CFR 211.198(b)'
+        });
       })
       .addCase(extractComplaintData.rejected, (state) => {
         state.isExtracting = false;
         state.extractionStepText = 'Extraction failed. Please check document format.';
+        state.auditTrail.unshift({
+          id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+          timestamp: getTimestampStr(),
+          action: 'Document Ingestion Failed',
+          category: 'EXTRACTION',
+          user: 'AI Intake Engine',
+          role: 'Automated Processing Engine',
+          details: 'Document extraction encountered an issue. Manual intervention required.',
+          status: 'FAILURE',
+          cfrReference: '21 CFR 211.198'
+        });
       })
       // checkCompleteness
       .addCase(checkCompleteness.fulfilled, (state, action) => {
         state.completenessIssues = action.payload;
         state.isCompletenessChecked = true;
+
+        state.auditTrail.unshift({
+          id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+          timestamp: getTimestampStr(),
+          action: 'Completeness Gate Evaluated',
+          category: 'COMPLIANCE',
+          user: 'Rule Engine / Validator',
+          role: 'Regulatory Compliance Engine',
+          details: `Evaluated 21 CFR § 211.198 intake gate. Identified ${action.payload.length} potential missing/incomplete field item(s).`,
+          status: action.payload.length === 0 ? 'SUCCESS' : 'WARNING',
+          cfrReference: '21 CFR 211.198(a)'
+        });
       })
       // runRiskAssessment
       .addCase(runRiskAssessment.pending, (state) => {
@@ -601,6 +714,18 @@ export const complaintSlice = createSlice({
           state.formData.initialSeverity = 'Critical';
           state.formData.priority = 'High';
         }
+
+        state.auditTrail.unshift({
+          id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+          timestamp: getTimestampStr(),
+          action: 'ICH Q9 RPN Risk Score Computed',
+          category: 'RISK_ASSESSMENT',
+          user: 'ICH Q9 Quality Risk Engine',
+          role: 'Risk Assessment Classifier',
+          details: `RPN Score calculated as ${action.payload.rpnScore} (${action.payload.riskCategory}). FDA 15-Day Alert required: ${action.payload.regulatoryReportingRequired ? 'YES' : 'NO'}.`,
+          status: action.payload.regulatoryReportingRequired ? 'WARNING' : 'SUCCESS',
+          cfrReference: action.payload.regulatoryReportingRequired ? '21 CFR 314.81(b)(1)' : 'ICH Q9 Quality Risk Management'
+        });
       })
       // checkDuplicates
       .addCase(checkDuplicates.pending, (state) => {
@@ -609,6 +734,18 @@ export const complaintSlice = createSlice({
       .addCase(checkDuplicates.fulfilled, (state, action) => {
         state.isDuplicateChecking = false;
         state.duplicates = action.payload;
+
+        state.auditTrail.unshift({
+          id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+          timestamp: getTimestampStr(),
+          action: 'Historical Defect Duplicate Query Executed',
+          category: 'DATABASE',
+          user: 'Historical Vector Indexer',
+          role: 'Records Search Engine',
+          details: `Searched historical repository across lot/product lines. Found ${action.payload.length} related past incident(s).`,
+          status: 'INFO',
+          cfrReference: '21 CFR 211.198'
+        });
       })
       // generateCapaRecommendation
       .addCase(generateCapaRecommendation.pending, (state) => {
@@ -618,6 +755,20 @@ export const complaintSlice = createSlice({
         state.isCapaGenerating = false;
         state.capaDraft = action.payload;
         state.formData.status = 'CAPA Initiated';
+
+        if (action.payload) {
+          state.auditTrail.unshift({
+            id: 'AUD-' + Math.floor(1000 + Math.random() * 9000),
+            timestamp: getTimestampStr(),
+            action: 'CAPA Plan & 5-Whys Formulated',
+            category: 'CAPA',
+            user: 'CAPA Remediation Engine',
+            role: 'Quality Systems Engine',
+            details: `Drafted root cause tree and ${action.payload.correctiveActions.length} corrective + ${action.payload.preventiveActions.length} preventive actions for ${action.payload.id}.`,
+            status: 'SUCCESS',
+            cfrReference: '21 CFR 211.192'
+          });
+        }
       })
       .addCase(generateCapaRecommendation.rejected, (state) => {
         state.isCapaGenerating = false;
@@ -628,14 +779,17 @@ export const complaintSlice = createSlice({
 export const {
   updateFormField,
   setFullForm,
+  setRiskAssessment,
   undoFormChange,
   redoFormChange,
   resetForm,
+  clearAllData,
   setRawInputText,
   setExtractionProgress,
   setActiveTab,
   saveComplaintRecord,
-  toggleCapaSignoff
+  toggleCapaSignoff,
+  addAuditLog
 } = complaintSlice.actions;
 
 export default complaintSlice.reducer;
